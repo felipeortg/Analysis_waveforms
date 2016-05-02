@@ -11,7 +11,10 @@
 
 
 
+
 TFile* Noise_analysis(int singleplot=0 ,const char * Voltage="56.5V",int event=0) {
+            
+    
     
     Int_t Event;
     Char_t Category[15];
@@ -20,7 +23,7 @@ TFile* Noise_analysis(int singleplot=0 ,const char * Voltage="56.5V",int event=0
     Double_t V_meas;
     
     
-    const double reject_time = 4;
+    
     
     double pe = 0.07;
     int row = 0;
@@ -46,11 +49,9 @@ TFile* Noise_analysis(int singleplot=0 ,const char * Voltage="56.5V",int event=0
     int max_found = 0;
     
     
-    //Define Voltages measured
-    
-    
     //Define thresholds
     
+    const double reject_time = 4; //in  nanoseconds
     const double after_pulse_th = 0.38;
     const double direct_xtalk_th = 1.17;
     const double xtalk_th = 0.85;
@@ -85,17 +86,27 @@ TFile* Noise_analysis(int singleplot=0 ,const char * Voltage="56.5V",int event=0
     Correl_noise[1] = new TGraph();
     Correl_noise[2] = new TGraph();
     Correl_noise[3] = new TGraph();
+    TGraph *Expfit_AP[vol_size];
     
     TCanvas* c1[vol_size];
     TCanvas* c2[vol_size];
     TCanvas* c3[vol_size];
     TCanvas* c4[vol_size];
+    TCanvas* expfit[vol_size];
     
     
     cout<<"****----->Voltage Breakdown calculation"<< endl;
     
     vector <Double_t> pe_volt;
-    TGraph *Vbias_ver= new TGraph();
+    //Change to recalculate the pe
+    /*pe_volt.push_back(6.87435e-02);
+    pe_volt.push_back( 1.20426e-01);
+    pe_volt.push_back(1.75262e-01);
+    pe_volt.push_back(2.30936e-01);
+    pe_volt.push_back(2.87958e-01);*/
+    pe_volt.push_back( 3.44156e-01);
+    Double_t VBD=55.9006;
+    /*TGraph *Vbias_ver= new TGraph();
     
     for (int i=0; i<vol_size; i++) {
         pe_volt.push_back(Amplitude_calc(i));
@@ -113,10 +124,11 @@ TFile* Noise_analysis(int singleplot=0 ,const char * Voltage="56.5V",int event=0
     
     TFitResultPtr  fit = Vbias_ver->Fit("pol1","S");
     Double_t VBD= fit->Value(0);
+    
  
     ca->Print("Plots/VBD.pdf","pdf");
     
-    
+    */
 
     /////////////////
     // Loop over all Voltages measured
@@ -152,6 +164,11 @@ TFile* Noise_analysis(int singleplot=0 ,const char * Voltage="56.5V",int event=0
         sprintf(canvas_title,"Clean %s",vol_folders[i].Data());
         c4[i] = new TCanvas(canvas_title,canvas_title,100,100,900,700);
         
+        sprintf(canvas_title,"Exponential fit %s",vol_folders[i].Data());
+        expfit[i] = new TCanvas(canvas_title,canvas_title,300,100,900,500);
+        
+        Expfit_AP[i]= new TGraph();
+        
         //loop over every measurement on a folder
         for (int j=0; j<data_size; j++) {
             
@@ -184,54 +201,31 @@ TFile* Noise_analysis(int singleplot=0 ,const char * Voltage="56.5V",int event=0
             max_cnt = 0;
             max_found = 0;
             
-            
-            /// Print Single event
-            
-            bool print;
-            print=false;
-            
-            
+            /////////////////////////////////////////////////////
             // direct x-talk
             for (row = 0; row < ROWS_DATA; row++) {
                 if ((time[row]>0 * ns)&(volts[row] > direct_xtalk_th * pe)) {// time larger 0ns
                     direct_xtalk_pulse++;
                 }
             }
-            //            if (direct_xtalk_pulse > 0) {
-            //                direct_xtalk_pulse_cnt++;
-            //
-            //                if (print) {
-            //                    cout<<"Direct x-talk cnt = %d\n"<< direct_xtalk_pulse_cnt<<endl;
-            //                }
-            //                //printf("Direct x-talk cnt = %d\n", direct_xtalk_pulse_cnt);
-            //            }
+            
+            /////////////////////////////////////////////////////
             // after-pulse threshold
             for (row = 0; row < ROWS_DATA; row++) {
                 if ((time[row]>reject_time*ns)&(volts[row] > after_pulse_th * pe)) {// time larger 4ns and ap_th
                     after_pulse++;
                 }
             }
-            //            if (after_pulse > 0) {
-            //                after_pulse_cnt++;
-            //                if (print) {
-            //                    cout<<"AP and Delayed x-talk event cnt = %d\n"<<after_pulse_cnt<<endl;
-            //                }
-            //                //printf("AP and Delayed x-talk event cnt = %d\n", after_pulse_cnt);
-            //            }
+            
+            /////////////////////////////////////////////////////
             // delayed x-talk
             for (row = 0; row < ROWS_DATA; row++) {
                 if ((time[row]>reject_time*ns)&(volts[row] > xtalk_th * pe)) {// time larger 4ns and larger xtalk_th
                     xtalk_pulse++;
                 }
             }
-            //            if (xtalk_pulse > 0) {
-            //                xtalk_pulse_cnt++;
-            //                if (print) {
-            //                    cout<<"X-talk event cnt = %d\n"<< xtalk_pulse_cnt<<endl;
-            //                }
-            //                //printf("X-talk event cnt = %d\n", xtalk_pulse_cnt);
-            //            }
-            //
+            
+            
             /////////////////////////////////////////////////////////////////////
             // Detect peaks in data after 4ns, count the number of maxima and
             // measure the time of arrival of first maxima
@@ -243,8 +237,7 @@ TFile* Noise_analysis(int singleplot=0 ,const char * Voltage="56.5V",int event=0
                         sig_max = volts[row];        // set the max
                         time_of_max = time[row];    // time max
                         max_noise_cnt++;                   // set the histeresis cnt
-                    }
-                    else if (max_noise_cnt > 0) max_noise_cnt--;  //  count down if no new max is reached
+                    }else if (max_noise_cnt > 0) max_noise_cnt--;  //  count down if no new max is reached
                     // decide if real max or only noise, threshold has to be reached in case of a real max
                     if (max_noise_cnt>2 && sig_max > time_dist_th * pe) {
                         max_cnt++;
@@ -257,7 +250,7 @@ TFile* Noise_analysis(int singleplot=0 ,const char * Voltage="56.5V",int event=0
                         
                         //printf("Max number is: %d   cnt=%d\n", max_cnt, max_noise_cnt);
                     }
-                } // 3ns
+                } // 4ns
             } //loop over data samples
             
             bool clean = true;
@@ -344,6 +337,10 @@ TFile* Noise_analysis(int singleplot=0 ,const char * Voltage="56.5V",int event=0
                 }
                 
                 clean = false;
+                
+                
+                //Fill for the exponential fit
+                Expfit_AP[i]->SetPoint(after_pulse_cnt-1,time_of_max_first,sig_max_first);
             }
             
             if (clean){
@@ -386,6 +383,11 @@ TFile* Noise_analysis(int singleplot=0 ,const char * Voltage="56.5V",int event=0
             
         }
         
+        expfit[i]->cd();
+        Expfit_AP[i]->Draw("AP*");
+        
+        
+        //Final result: Correlated noise
         Correl_noise[0]->SetPoint(i,V_meas,direct_xtalk_pulse_cnt/event_cnt*100);
         Correl_noise[1]->SetPoint(i,V_meas,after_pulse_cnt/event_cnt*100);
         Correl_noise[2]->SetPoint(i,V_meas,xtalk_pulse_cnt/event_cnt*100);
@@ -411,6 +413,7 @@ TFile* Noise_analysis(int singleplot=0 ,const char * Voltage="56.5V",int event=0
     
     tree->Write();
     
+    /*
     TCanvas* c5 = new TCanvas("Correlated Noise","Correlated Noise",100,100,900,700);
     
     Correl_noise[3]->SetTitle("Total");
@@ -437,7 +440,7 @@ TFile* Noise_analysis(int singleplot=0 ,const char * Voltage="56.5V",int event=0
     c5->BuildLegend();
     c5->SetGrid();
     c5->Print("Correlated Noise.pdf","pdf");
-    c5->Write();
+    c5->Write();*/
     
     delete hfile;
     
