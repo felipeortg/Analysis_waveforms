@@ -13,20 +13,23 @@
 
 /* global variable declaration */
 
+/* Configuration parameters */
+
 //Define name of the folder with the data measured
 const TString data_folder = "ov_scan_pde_H2014";
 
 
 //Define number of files on each voltage
-const Int_t data_size = 2000;
+const Int_t data_size = 500;
 
 
+//Define Voltages measured
 //Define name of subfolders of each voltage
-const Int_t vol_size = 6;
-TString vol_folders[vol_size] = {"56.5V","57V","57.5V","58V","58.5V","59V"};
+//const Int_t vol_size = 6;
+//TString vol_folders[vol_size] = {"56.5V","57V","57.5V","58V","58.5V","59V"};
 
-
-
+const Int_t vol_size = 1;
+TString vol_folders[vol_size] = {"59V"};
 
 const double ns = 1e-9;
 
@@ -74,18 +77,20 @@ Double_t Amplitude_calc(int i){
     }
     
     
-    TCanvas* c1= new TCanvas(canvas_title,canvas_title,100,100,900,700);
-    
-    volt_ampl->Draw();
+  
     
     TF1 *f1 = new TF1("f1","gaus",0,0.8); //Change range for fit of MPV
     volt_ampl->Fit("f1","R");
     pe_volt= f1->GetParameter(1);
     
-    c1->SetGrid();
+ 
     
     //Uncoment to save plot and check fit
     /*
+    TCanvas* c1= new TCanvas(canvas_title,canvas_title,100,100,900,700);
+     
+    volt_ampl->Draw();
+    c1->SetGrid();
     sprintf(canvas_title,"Plots/Amplitude_calculation_%s.pdf",vol_folders[i].Data());
     c1->Print(canvas_title,"pdf");
     */
