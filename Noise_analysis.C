@@ -12,10 +12,94 @@
 
 
 
-TFile* Noise_analysis(int singleplot=0 ,const char * Voltage="56.5V",int event=0) {
+
+static const char *optString = "d:S:h?";
+
+int main(int argc, char* argv[]) {
+    
+    // initialize globalArgs
+    globalArgs.data_folder = " ";
+    globalArgs.arg_pathToSetupFile = " ";
+    //globalArgs.arg_eventplot = -1;
+    
+    // Get paremeter from the command
+    int opt =0;
+    opt = getopt(argc, argv, optString);
+    if(opt == -1){
+        std::cerr <<  "There is no opption in the command! Type \"output -h\" for help." << std::endl;
+        exit(EXIT_FAILURE);
+    }
+    
+    while(opt != -1){
+        switch(opt){
+            case 'd':
+                globalArgs.data_folder= optarg;
+                //std::cout<<"-p option path= "<<globalArgs.arg_pathToData<<std::endl;
+                break;
+            case 'S':
+                globalArgs.arg_pathToSetupFile = optarg;
+                break;
+            /*case 'E':
+                globalArgs.arg_SinglePrint = true;
+                break;*/
+            case 'h':
+            case '?':
+                std::cerr << "Usage: output -d pathToData -S pathToSetupFile" << std::endl;
+                std::cerr << "----------------------------------------------------------------------------------------------------"<<std::endl;
+                std::cerr << " '-d'+'-S' options are necessary!"<<std::endl;
+                std::cerr << "-----------------------------------------------------------------------------------------------------"<<std::endl;
+                
+                std::cerr << "Example: ./output -d /Users/Analysis_waveforms/ov_scan_pde_H2014 -S /Users/Analysis_waveforms/config_file.txt"<<std::endl;
+                exit(EXIT_FAILURE);
+                break;
+            default:
+                break;
+        }
+        opt = getopt(argc, argv, optString);
+    }
+    
+    
+    if((globalArgs.data_folder== " " || globalArgs.arg_pathToSetupFile == " ")){
+        std::cerr << "ERROR: -d or -S option is not set! Both of them has to be set correctly!"<<std::endl;
+        exit(EXIT_FAILURE);
+    }
             
+    ifstream setupFile(globalArgs.arg_pathToSetupFile);
+    if(!setupFile){
+        std::cerr << "Failure: could not open file: \"" << globalArgs.arg_pathToSetupFile << "\"." << std::endl;
+        std::cerr << "Please check if the path is correct or not!" << std::endl;
+        exit(EXIT_FAILURE);
+    }
+    
+    string s;
+    vector <TString> vol_folders;
+    Int_t data_size;
+    while (true) {
+        
+        getline(setupFile, s);
+        if (setupFile.eof()) break;
+        
+        const char* searchString = s.c_str();
+        char volt [20];
+        Int_t numfiles;
+        
+        if (s.find("#") == 0 || s=="") {
+            continue; // Skip commented lines
+        }
+        
+        if(sscanf(searchString, "V || %s ||", volt)==1){
+            vol_folders.push_back(volt);
+        }
+        
+        if(sscanf(searchString, "Files at each voltage || %d ||", &numfiles)==1){
+            data_size = numfiles;
+        }
+    }
+    
+    const Int_t vol_size = vol_folders.size();
     
     
+    int singleplot=0;
     Int_t Event;
     Char_t Category[15];
     TGraph* waveform = 0;
@@ -57,9 +141,10 @@ TFile* Noise_analysis(int singleplot=0 ,const char * Voltage="56.5V",int event=0
     const double xtalk_th = 0.85;
     const double time_dist_th = 0.4;
     
-    
+    const char * Voltage="56.5V";
+    int event=0;
     if (singleplot) {
-        single_plot(Voltage,event);
+       // single_plot(Voltage,event);
     }
     
     
@@ -88,6 +173,8 @@ TFile* Noise_analysis(int singleplot=0 ,const char * Voltage="56.5V",int event=0
     Correl_noise[3] = new TGraph();
     TGraph *Expfit_AP[vol_size];
     
+    TF1 *exp= new TF1("exp","[0]*(1-exp(-x/[1]))",0,180 * ns);
+    
     TCanvas* c1[vol_size];
     TCanvas* c2[vol_size];
     TCanvas* c3[vol_size];
@@ -99,18 +186,18 @@ TFile* Noise_analysis(int singleplot=0 ,const char * Voltage="56.5V",int event=0
     
     vector <Double_t> pe_volt;
     //Change to recalculate the pe
-    /*pe_volt.push_back(6.87435e-02);
-    pe_volt.push_back( 1.20426e-01);
+    //pe_volt.push_back(6.87435e-02);
+    /*pe_volt.push_back( 1.20426e-01);
     pe_volt.push_back(1.75262e-01);
     pe_volt.push_back(2.30936e-01);
     pe_volt.push_back(2.87958e-01);*/
-    pe_volt.push_back( 3.44156e-01);
-    Double_t VBD=55.9006;
-    /*TGraph *Vbias_ver= new TGraph();
+    //pe_volt.push_back( 3.44156e-01);
+    //Double_t VBD=55.9006;
+    TGraph *Vbias_ver= new TGraph();
     
     for (int i=0; i<vol_size; i++) {
-        pe_volt.push_back(Amplitude_calc(i));
-        V_meas = vol_folders[i].Atof();
+        pe_volt.push_back(Amplitude_calc(vol_folders.at(i).Data(), data_size));
+        V_meas = vol_folders.at(i).Atof();
         Vbias_ver->SetPoint(i, pe_volt.at(i), V_meas);
     }
     
@@ -122,13 +209,13 @@ TFile* Noise_analysis(int singleplot=0 ,const char * Voltage="56.5V",int event=0
     Vbias_ver->Draw("AP*");
     ca->SetGrid();
     
-    TFitResultPtr  fit = Vbias_ver->Fit("pol1","S");
+    TFitResultPtr fit = Vbias_ver->Fit("pol1","S");
     Double_t VBD= fit->Value(0);
     
  
     ca->Print("Plots/VBD.pdf","pdf");
     
-    */
+    
 
     /////////////////
     // Loop over all Voltages measured
@@ -147,7 +234,7 @@ TFile* Noise_analysis(int singleplot=0 ,const char * Voltage="56.5V",int event=0
         after_pulse_cnt = 0;
         event_cnt = 0;
         
-        cout<<"****----->Voltage analyzed:"<< vol_folders[i] << endl;
+        cout<<"****----->Voltage analyzed:"<< vol_folders.at(i) << endl;
         
         
         //Define amplitude measured
@@ -155,16 +242,16 @@ TFile* Noise_analysis(int singleplot=0 ,const char * Voltage="56.5V",int event=0
         Double_t pe = pe_volt.at(i);
         
         Char_t canvas_title[40];
-        sprintf(canvas_title,"Direct CrossTalk %s",vol_folders[i].Data());
+        sprintf(canvas_title,"Direct CrossTalk %s",vol_folders.at(i).Data());
         c1[i] = new TCanvas(canvas_title,canvas_title,100,100,900,700);
-        sprintf(canvas_title,"Delayed CrossTalk %s",vol_folders[i].Data());
+        sprintf(canvas_title,"Delayed CrossTalk %s",vol_folders.at(i).Data());
         c2[i] = new TCanvas(canvas_title,canvas_title,100,100,900,700);
-        sprintf(canvas_title,"After Pulse %s",vol_folders[i].Data());
+        sprintf(canvas_title,"After Pulse %s",vol_folders.at(i).Data());
         c3[i] = new TCanvas(canvas_title,canvas_title,100,100,900,700);
-        sprintf(canvas_title,"Clean %s",vol_folders[i].Data());
+        sprintf(canvas_title,"Clean %s",vol_folders.at(i).Data());
         c4[i] = new TCanvas(canvas_title,canvas_title,100,100,900,700);
         
-        sprintf(canvas_title,"Exponential fit %s",vol_folders[i].Data());
+        sprintf(canvas_title,"Exponential fit %s",vol_folders.at(i).Data());
         expfit[i] = new TCanvas(canvas_title,canvas_title,300,100,900,500);
         
         Expfit_AP[i]= new TGraph();
@@ -174,7 +261,7 @@ TFile* Noise_analysis(int singleplot=0 ,const char * Voltage="56.5V",int event=0
             
             Char_t datafilename[100];
             
-            sprintf(datafilename,"%s/%s/C1H%05i.csv",data_folder.Data(),vol_folders[i].Data(),j);
+            sprintf(datafilename,"%s/%s/C1H%05i.csv",globalArgs.data_folder,vol_folders.at(i).Data(),j);
             
             waveform = new TGraph(datafilename,"%lg %lg","/t;,");
             waveform->SetName(datafilename);
@@ -185,7 +272,7 @@ TFile* Noise_analysis(int singleplot=0 ,const char * Voltage="56.5V",int event=0
             
             Amp = waveform->GetY()[0];
             
-            V_meas = vol_folders[i].Atof()-VBD;
+            V_meas = vol_folders.at(i).Atof()-VBD;
             
             
             
@@ -270,7 +357,7 @@ TFile* Noise_analysis(int singleplot=0 ,const char * Voltage="56.5V",int event=0
                 if (color1>1) {
                     waveform->Draw("SAME");
                 }else{
-                    sprintf(graph_title,"Direct CrossTalk %s",vol_folders[i].Data());
+                    sprintf(graph_title,"Direct CrossTalk %s",vol_folders.at(i).Data());
                     waveform->SetTitle(graph_title);
                     waveform->GetYaxis()->SetRangeUser(-0.1,pe*(15+3*i)/10);
                     waveform->GetXaxis()->SetRangeUser(-10*ns,80*ns);
@@ -298,7 +385,7 @@ TFile* Noise_analysis(int singleplot=0 ,const char * Voltage="56.5V",int event=0
                 if (color2>1) {
                     waveform->Draw("SAME");
                 }else{
-                    sprintf(graph_title,"Delayed cross-talk %s",vol_folders[i].Data());
+                    sprintf(graph_title,"Delayed cross-talk %s",vol_folders.at(i).Data());
                     waveform->SetTitle(graph_title);
                     waveform->GetYaxis()->SetRangeUser(-0.1,pe*(15+3*i)/10);
                     waveform->GetYaxis()->SetTitle("Oscilloscope Signal [V]");
@@ -325,7 +412,7 @@ TFile* Noise_analysis(int singleplot=0 ,const char * Voltage="56.5V",int event=0
                 if (color3>1) {
                     waveform->Draw("SAME");
                 }else{
-                    sprintf(graph_title,"After pulse %s",vol_folders[i].Data());
+                    sprintf(graph_title,"After pulse %s",vol_folders.at(i).Data());
                     waveform->SetTitle(graph_title);
                     waveform->GetYaxis()->SetRangeUser(-0.1,pe*(15+3*i)/10);
                     waveform->GetXaxis()->SetRangeUser(-10*ns,80*ns);
@@ -340,7 +427,7 @@ TFile* Noise_analysis(int singleplot=0 ,const char * Voltage="56.5V",int event=0
                 
                 
                 //Fill for the exponential fit
-                Expfit_AP[i]->SetPoint(after_pulse_cnt-1,time_of_max_first,sig_max_first);
+                Expfit_AP[i]->SetPoint(after_pulse_cnt-1,time_of_max,sig_max);
             }
             
             if (clean){
@@ -357,7 +444,7 @@ TFile* Noise_analysis(int singleplot=0 ,const char * Voltage="56.5V",int event=0
                     if (color4>1) {
                         waveform->Draw("SAME");
                     }else{
-                        sprintf(graph_title,"Clean pulse %s",vol_folders[i].Data());
+                        sprintf(graph_title,"Clean pulse %s",vol_folders.at(i).Data());
                         waveform->SetTitle(graph_title);
                         waveform->GetYaxis()->SetRangeUser(-0.1,pe*(15+3*i)/10);
                         waveform->GetYaxis()->SetTitle("Oscilloscope Signal [V]");
@@ -385,6 +472,16 @@ TFile* Noise_analysis(int singleplot=0 ,const char * Voltage="56.5V",int event=0
         
         expfit[i]->cd();
         Expfit_AP[i]->Draw("AP*");
+        exp->SetParameter(0,pe);
+        exp->SetParLimits(0,0.5*pe,1.5*pe);
+        exp->SetParameter(1,30*ns);
+        exp->SetParLimits(1,4*ns,500*ns);
+        Expfit_AP[i]->Fit("exp");
+        
+        c3[i]->cd();
+        TF1* exp_plot =(TF1*) exp->Clone();
+        exp_plot->Draw("SAME");
+        
         
         
         //Final result: Correlated noise
@@ -397,15 +494,15 @@ TFile* Noise_analysis(int singleplot=0 ,const char * Voltage="56.5V",int event=0
         
         //Uncoment to save waveforms and check them
         /*
-        sprintf(canvas_title,"Plots/Immcrosstalk_%s.pdf",vol_folders[i].Data());
+        sprintf(canvas_title,"Plots/Immcrosstalk_%s.pdf",vol_folders.at(i).Data());
         c1[i]->Print(canvas_title,"pdf");
-        sprintf(canvas_title,"Plots/Immcrosstalk_%s.root",vol_folders[i].Data());
+        sprintf(canvas_title,"Plots/Immcrosstalk_%s.root",vol_folders.at(i).Data());
         c1[i]->SaveAs(canvas_title,"root");
-        sprintf(canvas_title,"Plots/Delcrosstalk_%s.pdf",vol_folders[i].Data());
+        sprintf(canvas_title,"Plots/Delcrosstalk_%s.pdf",vol_folders.at(i).Data());
         c2[i]->Print(canvas_title,"pdf");
-        sprintf(canvas_title,"Plots/Afterpulse_%s.pdf",vol_folders[i].Data());
+        sprintf(canvas_title,"Plots/Afterpulse_%s.pdf",vol_folders.at(i).Data());
         c3[i]->Print(canvas_title,"pdf");
-        sprintf(canvas_title,"Plots/Clean_%s.pdf",vol_folders[i].Data());
+        sprintf(canvas_title,"Plots/Clean_%s.pdf",vol_folders.at(i).Data());
         c4[i]->Print(canvas_title,"pdf");
         */
         
@@ -413,7 +510,7 @@ TFile* Noise_analysis(int singleplot=0 ,const char * Voltage="56.5V",int event=0
     
     tree->Write();
     
-    /*
+    
     TCanvas* c5 = new TCanvas("Correlated Noise","Correlated Noise",100,100,900,700);
     
     Correl_noise[3]->SetTitle("Total");
@@ -440,17 +537,10 @@ TFile* Noise_analysis(int singleplot=0 ,const char * Voltage="56.5V",int event=0
     c5->BuildLegend();
     c5->SetGrid();
     c5->Print("Correlated Noise.pdf","pdf");
-    c5->Write();*/
+    c5->Write();
     
     delete hfile;
     
     return 0;
 
 }
-
-
-
-
-
-
-
