@@ -1,5 +1,3 @@
-
-
 //
 //  Noise_analysis.h
 //  
