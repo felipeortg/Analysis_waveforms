@@ -182,18 +182,22 @@ int main(int argc, char* argv[]) {
     TCanvas* expfit[vol_size];
     
     
-    cout<<"****----->Voltage Breakdown calculation"<< endl;
+    cout<<"****----->Voltage Breakdown calculation ***"<< endl;
     
+   
     vector <Double_t> pe_volt;
-    //Change to recalculate the pe
-    //pe_volt.push_back(6.87435e-02);
-    /*pe_volt.push_back( 1.20426e-01);
-    pe_volt.push_back(1.75262e-01);
-    pe_volt.push_back(2.30936e-01);
-    pe_volt.push_back(2.87958e-01);*/
-    //pe_volt.push_back( 3.44156e-01);
-    //Double_t VBD=55.9006;
     TGraph *Vbias_ver= new TGraph();
+    
+    
+        //Change to not recalculate the pe
+        //pe_volt.push_back(6.87435e-02);
+        /*pe_volt.push_back( 1.20426e-01);
+        pe_volt.push_back(1.75262e-01);
+        pe_volt.push_back(2.30936e-01);
+        pe_volt.push_back(2.87958e-01);*/
+        //pe_volt.push_back( 3.44156e-01);
+        //Double_t VBD=55.9006;
+    
     
     for (int i=0; i<vol_size; i++) {
         pe_volt.push_back(Amplitude_calc(vol_folders.at(i).Data(), data_size));
@@ -212,11 +216,15 @@ int main(int argc, char* argv[]) {
     TFitResultPtr fit = Vbias_ver->Fit("pol1","S");
     Double_t VBD= fit->Value(0);
     
- 
-    ca->Print("Plots/VBD.pdf","pdf");
+    Char_t VBD_canvas[40];
+    //sprintf(VBD_canvas,"Plots/VBD_%s.pdf",globalArgs.data_folder);
+    //ca->Print(VBD_canvas,"pdf");
     
     
-
+    cout<<"////////////"<< endl;
+    cout<<"****----->Noise analysis ***"<< endl;
+    cout<<"////////////"<< endl;
+    
     /////////////////
     // Loop over all Voltages measured
     /////////////////
@@ -234,7 +242,7 @@ int main(int argc, char* argv[]) {
         after_pulse_cnt = 0;
         event_cnt = 0;
         
-        cout<<"****----->Voltage analyzed:"<< vol_folders.at(i) << endl;
+        cout<<"****----->Voltage analyzed: "<< vol_folders.at(i) << endl;
         
         
         //Define amplitude measured
@@ -483,7 +491,6 @@ int main(int argc, char* argv[]) {
         exp_plot->Draw("SAME");
         
         
-        
         //Final result: Correlated noise
         Correl_noise[0]->SetPoint(i,V_meas,direct_xtalk_pulse_cnt/event_cnt*100);
         Correl_noise[1]->SetPoint(i,V_meas,after_pulse_cnt/event_cnt*100);
@@ -493,7 +500,7 @@ int main(int argc, char* argv[]) {
         
         
         //Uncoment to save waveforms and check them
-        /*
+        
         sprintf(canvas_title,"Plots/Immcrosstalk_%s.pdf",vol_folders.at(i).Data());
         c1[i]->Print(canvas_title,"pdf");
         sprintf(canvas_title,"Plots/Immcrosstalk_%s.root",vol_folders.at(i).Data());
@@ -504,7 +511,7 @@ int main(int argc, char* argv[]) {
         c3[i]->Print(canvas_title,"pdf");
         sprintf(canvas_title,"Plots/Clean_%s.pdf",vol_folders.at(i).Data());
         c4[i]->Print(canvas_title,"pdf");
-        */
+        
         
     }
     
@@ -534,7 +541,16 @@ int main(int argc, char* argv[]) {
     Correl_noise[1]->Draw("LP*");
     Correl_noise[2]->Draw("LP*");
     
-    c5->BuildLegend();
+    
+    
+    TLegend* leg = new TLegend(0.6,0.7,0.9,0.95);
+    leg->AddEntry(Correl_noise[3],"Total","lp");
+    leg->AddEntry(Correl_noise[0],"Direct Cross-Talk","lp");
+    leg->AddEntry(Correl_noise[1],"After Pulse","lp");
+    leg->AddEntry(Correl_noise[2],"Delayed Cross-Talk","lp");
+    leg->Draw();
+    
+    
     c5->SetGrid();
     c5->Print("Correlated Noise.pdf","pdf");
     c5->Write();

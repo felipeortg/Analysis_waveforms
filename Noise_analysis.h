@@ -104,7 +104,7 @@ Double_t Amplitude_calc(const char* vol_folder, Int_t data_size){
     
     TH1D* volt_ampl= new TH1D(canvas_title, canvas_title, 150, -0.05, 0.5);
     
-    cout<<"****----->Voltage amplitude analysis:"<< vol_folder << endl;
+    cout<<"****----->Amplitude calculation of pe:"<< vol_folder << endl;
     
     //loop over every measurement on a folder
     for (int j=0; j<data_size; j++) {
