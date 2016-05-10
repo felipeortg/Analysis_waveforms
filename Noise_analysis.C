@@ -13,14 +13,15 @@
 
 
 
-static const char *optString = "d:S:h?";
+static const char *optString = "d:S:ah?";
 
 int main(int argc, char* argv[]) {
+    
     
     // initialize globalArgs
     globalArgs.data_folder = " ";
     globalArgs.arg_pathToSetupFile = " ";
-    //globalArgs.arg_eventplot = -1;
+    globalArgs.save_all = 0;
     
     // Get paremeter from the command
     int opt =0;
@@ -39,17 +40,18 @@ int main(int argc, char* argv[]) {
             case 'S':
                 globalArgs.arg_pathToSetupFile = optarg;
                 break;
-            /*case 'E':
-                globalArgs.arg_SinglePrint = true;
-                break;*/
+            case 'a':
+                globalArgs.save_all = 1;
+                break;
             case 'h':
             case '?':
-                std::cerr << "Usage: output -d pathToData -S pathToSetupFile" << std::endl;
+                std::cerr << "Usage: output -d pathToData -S pathToSetupFile [-a]" << std::endl;
                 std::cerr << "----------------------------------------------------------------------------------------------------"<<std::endl;
                 std::cerr << " '-d'+'-S' options are necessary!"<<std::endl;
                 std::cerr << "-----------------------------------------------------------------------------------------------------"<<std::endl;
-                
-                std::cerr << "Example: ./output -d /Users/Analysis_waveforms/ov_scan_pde_H2014 -S /Users/Analysis_waveforms/config_file.txt"<<std::endl;
+                std::cerr << " use '-a' option afterwards to save all the plots of the analysis to further check."<<std::endl;
+                std::cerr << "-----------------------------------------------------------------------------------------------------"<<std::endl;
+                std::cerr << "Example: ./output -d /Users/Analysis_waveforms/ov_scan_pde_H2014 -S /Users/Analysis_waveforms/config_file.txt [-a]"<<std::endl;
                 exit(EXIT_FAILURE);
                 break;
             default:
@@ -59,7 +61,7 @@ int main(int argc, char* argv[]) {
     }
     
     
-    if((globalArgs.data_folder== " " || globalArgs.arg_pathToSetupFile == " ")){
+    if((strncmp(globalArgs.data_folder," ",1) == 0|| strncmp(globalArgs.arg_pathToSetupFile," ",1) == 0)){
         std::cerr << "ERROR: -d or -S option is not set! Both of them has to be set correctly!"<<std::endl;
         exit(EXIT_FAILURE);
     }
@@ -71,6 +73,9 @@ int main(int argc, char* argv[]) {
         exit(EXIT_FAILURE);
     }
     
+    
+    
+    //Read setup file:
     string s;
     vector <TString> vol_folders;
     Int_t data_size;
@@ -84,9 +89,10 @@ int main(int argc, char* argv[]) {
         Int_t numfiles;
         
         if (s.find("#") == 0 || s=="") {
-            continue; // Skip commented lines
+            continue; // Skip commented  or empty lines
         }
         
+        //Find the voltages
         if(sscanf(searchString, "V || %s ||", volt)==1){
             vol_folders.push_back(volt);
         }
@@ -96,18 +102,15 @@ int main(int argc, char* argv[]) {
         }
     }
     
+    //Initialize variables
     const Int_t vol_size = vol_folders.size();
     
-    
     int singleplot=0;
-    Int_t Event;
+    Int_t Event=0;
     Char_t Category[15];
     TGraph* waveform = 0;
     Double_t Amp;
     Double_t V_meas;
-    
-    
-    
     
     double pe = 0.07;
     int row = 0;
@@ -132,20 +135,29 @@ int main(int argc, char* argv[]) {
     int max_noise_cnt = 0;
     int max_found = 0;
     
-    
+    ////////////////
     //Define thresholds
+    ////////////////
     
-    const double reject_time = 4; //in  nanoseconds
+    //in  nanoseconds
+    const double reject_time = 4;
+    const double time_dist_th = 0.4;
+    
+    //in percentage of pe
     const double after_pulse_th = 0.38;
     const double direct_xtalk_th = 1.17;
     const double xtalk_th = 0.85;
-    const double time_dist_th = 0.4;
     
-    const char * Voltage="56.5V";
+    
+    
+    ////////////////
+    ////////////////
+    
+    /*const char * Voltage="56.5V";
     int event=0;
     if (singleplot) {
-       // single_plot(Voltage,event);
-    }
+        single_plot(Voltage,event);
+    }*/
     
     
     //Create a root tree with the graph of the waveform of each event and
@@ -159,29 +171,32 @@ int main(int argc, char* argv[]) {
     TTree *tree = new TTree("T","Noise Analysis");
     tree->Branch("Event",&Event,"Event/I");
     tree->Branch("Category",Category,"Category/C");
-    tree->Branch("waveform","TGraph",&waveform);
-    tree->Branch("V_meas",&V_meas,"V_meas/D");
+    //Uncomment if every single waveform is desired to be safe by its own on the root file
+    //tree->Branch("waveform","TGraph",&waveform);
+    tree->Branch("V_meas",&V_meas,"V_meas/D"); //OV of the measurement
     
-    
-    
-    Event=0;
-    
+   
     TGraph* Correl_noise[4];
     Correl_noise[0] = new TGraph();
     Correl_noise[1] = new TGraph();
     Correl_noise[2] = new TGraph();
     Correl_noise[3] = new TGraph();
+    TGraph *Expfit_longtau[vol_size];
     TGraph *Expfit_AP[vol_size];
     
-    TF1 *exp= new TF1("exp","[0]*(1-exp(-x/[1]))",0,180 * ns);
+    TF1 *exp_longtau= new TF1("exptau","[0]*exp(-x/[1])",0,180 * ns);
+    TF1 *exp= new TF1("exp","[0]*(1-exp(-x/[1]))+[2]*exp(-x/[3])",0,180 * ns);
     
     TCanvas* c1[vol_size];
     TCanvas* c2[vol_size];
     TCanvas* c3[vol_size];
     TCanvas* c4[vol_size];
-    TCanvas* expfit[vol_size];
     
+    TMultiGraph *Cleanwaves[vol_size];
+    TCanvas* expfit_longtau_c[vol_size];
+    TCanvas* expfit_AP_c[vol_size];
     
+    cout<<"////////////"<< endl;
     cout<<"****----->Voltage Breakdown calculation ***"<< endl;
     
    
@@ -198,7 +213,7 @@ int main(int argc, char* argv[]) {
         //pe_volt.push_back( 3.44156e-01);
         //Double_t VBD=55.9006;
     
-    
+    //Calculate Voltage breakdown and size of pe
     for (int i=0; i<vol_size; i++) {
         pe_volt.push_back(Amplitude_calc(vol_folders.at(i).Data(), data_size));
         V_meas = vol_folders.at(i).Atof();
@@ -213,12 +228,13 @@ int main(int argc, char* argv[]) {
     Vbias_ver->Draw("AP*");
     ca->SetGrid();
     
+    cout<<"////////////"<< endl;
+    cout<<"****----->Voltage Breakdown fit ***"<< endl;
+    
     TFitResultPtr fit = Vbias_ver->Fit("pol1","S");
     Double_t VBD= fit->Value(0);
     
-    Char_t VBD_canvas[40];
-    //sprintf(VBD_canvas,"Plots/VBD_%s.pdf",globalArgs.data_folder);
-    //ca->Print(VBD_canvas,"pdf");
+    if (globalArgs.save_all==1) ca->Write();
     
     
     cout<<"////////////"<< endl;
@@ -230,12 +246,12 @@ int main(int argc, char* argv[]) {
     /////////////////
     for (int i=0; i<vol_size; i++) {
         
-        //Important to reinitialize, use value 1 to plot axis of TGraph()
+        //Important to reinitialize, the value color* = kOrange-11 is used to plot axis of TGraph()
         
-        int color1 = 0;
-        int color2 = 0;
-        int color3 = 0;
-        int color4 = 0;
+        int color1 = kOrange-11;
+        int color2 = kOrange-11;
+        int color3 = kOrange-11;
+        int color4 = kOrange-11;
         
         direct_xtalk_pulse_cnt = 0;
         xtalk_pulse_cnt = 0;
@@ -245,23 +261,32 @@ int main(int argc, char* argv[]) {
         cout<<"****----->Voltage analyzed: "<< vol_folders.at(i) << endl;
         
         
-        //Define amplitude measured
+        //Define amplitude measured at which OV
         
         Double_t pe = pe_volt.at(i);
         
+        V_meas = vol_folders.at(i).Atof()-VBD;
+        
+        //Define canvases to save and check results
+        
         Char_t canvas_title[40];
-        sprintf(canvas_title,"Direct CrossTalk %s",vol_folders.at(i).Data());
+        sprintf(canvas_title,"Direct CrossTalk OV = %2.2f V",V_meas);
         c1[i] = new TCanvas(canvas_title,canvas_title,100,100,900,700);
-        sprintf(canvas_title,"Delayed CrossTalk %s",vol_folders.at(i).Data());
+        sprintf(canvas_title,"Delayed CrossTalk OV = %2.2f V",V_meas);
         c2[i] = new TCanvas(canvas_title,canvas_title,100,100,900,700);
-        sprintf(canvas_title,"After Pulse %s",vol_folders.at(i).Data());
+        sprintf(canvas_title,"After Pulse OV = %2.2f V",V_meas);
         c3[i] = new TCanvas(canvas_title,canvas_title,100,100,900,700);
-        sprintf(canvas_title,"Clean %s",vol_folders.at(i).Data());
+        sprintf(canvas_title,"Clean OV = %2.2f V",V_meas);
         c4[i] = new TCanvas(canvas_title,canvas_title,100,100,900,700);
         
-        sprintf(canvas_title,"Exponential fit %s",vol_folders.at(i).Data());
-        expfit[i] = new TCanvas(canvas_title,canvas_title,300,100,900,500);
+        Cleanwaves[i]=new TMultiGraph();
         
+        sprintf(canvas_title,"Exponential fit, #tau_l OV = %2.2f V",V_meas);
+        expfit_longtau_c[i] = new TCanvas(canvas_title,canvas_title,300,100,900,500);
+        sprintf(canvas_title,"Exponential fit OV = %2.2f V",V_meas);
+        expfit_AP_c[i] = new TCanvas(canvas_title,canvas_title,300,100,900,500);
+        
+        Expfit_longtau[i]= new TGraph();
         Expfit_AP[i]= new TGraph();
         
         //loop over every measurement on a folder
@@ -270,19 +295,15 @@ int main(int argc, char* argv[]) {
             Char_t datafilename[100];
             
             sprintf(datafilename,"%s/%s/C1H%05i.csv",globalArgs.data_folder,vol_folders.at(i).Data(),j);
-            
+            //Get the data of a single file:
             waveform = new TGraph(datafilename,"%lg %lg","/t;,");
             waveform->SetName(datafilename);
             
-            int ROWS_DATA = waveform->GetN();
+            Int_t ROWS_DATA = waveform->GetN();
             Double_t *time = waveform->GetX();
             Double_t *volts = waveform->GetY();
             
             Amp = waveform->GetY()[0];
-            
-            V_meas = vol_folders.at(i).Atof()-VBD;
-            
-            
             
             
             /////////////////////////////////////////////////////
@@ -323,7 +344,7 @@ int main(int argc, char* argv[]) {
             
             /////////////////////////////////////////////////////////////////////
             // Detect peaks in data after 4ns, count the number of maxima and
-            // measure the time of arrival of first maxima
+            // measure the time of arrival of first maxima, used later for AP exp fit
             /////////////////////////////////////////////////////////////////////
             max_noise_cnt = 0;
             for (row = 0; row < ROWS_DATA; row++) {
@@ -346,28 +367,31 @@ int main(int argc, char* argv[]) {
                         //printf("Max number is: %d   cnt=%d\n", max_cnt, max_noise_cnt);
                     }
                 } // 4ns
-            } //loop over data samples
+            } //loop over time
             
-            bool clean = true;
+            bool clean = true; //The pulse is clean until the contrary can be demonstrated
             char graph_title[50];
             
+            //Check for imm x-talk and plot
             if (direct_xtalk_pulse > 0){
                 direct_xtalk_pulse_cnt++;
                 sprintf(Category,"ImmCrosstalk");
                 c1[i]->cd();
                 
-                color1++;
-                if (color1==10 || color1==0) {
-                    color1++;
-                } else if (color1>49) color1=2;
+                color1=color1+2;
+                if (color1>kOrange+110) {
+                    color1=kOrange-8;
+                }else if (color1>kOrange+109){
+                    color1=kOrange-7;
+                }
                 waveform->SetLineColor(color1);
                 
-                if (color1>1) {
+                if (color1>kOrange-8) {
                     waveform->Draw("SAME");
                 }else{
-                    sprintf(graph_title,"Direct CrossTalk %s",vol_folders.at(i).Data());
+                    sprintf(graph_title,"Direct CrossTalk OV = %2.2f V",V_meas);
                     waveform->SetTitle(graph_title);
-                    waveform->GetYaxis()->SetRangeUser(-0.1,pe*(15+3*i)/10);
+                    waveform->GetYaxis()->SetRangeUser(-0.1,pe*2.5);
                     waveform->GetXaxis()->SetRangeUser(-10*ns,80*ns);
                     waveform->GetYaxis()->SetTitle("Oscilloscope Signal [V]");
                     waveform->GetYaxis()->SetTitleOffset(1.3);
@@ -384,18 +408,20 @@ int main(int argc, char* argv[]) {
                 sprintf(Category,"DelCrosstalk");
                 c2[i]->cd();
                 
-                color2++;
-                if (color2==10 || color2==0) {
-                    color2++;
-                } else if (color2>49) color2=2;
+                color2=color2+2;
+                if (color2>kOrange+110) {
+                    color2=kOrange-8;
+                }else if (color2>kOrange+109){
+                    color2=kOrange-7;
+                }
                 waveform->SetLineColor(color2);
                 
-                if (color2>1) {
+                if (color2>kOrange-8) {
                     waveform->Draw("SAME");
                 }else{
-                    sprintf(graph_title,"Delayed cross-talk %s",vol_folders.at(i).Data());
+                    sprintf(graph_title,"Delayed cross-talk OV = %2.2f V",V_meas);
                     waveform->SetTitle(graph_title);
-                    waveform->GetYaxis()->SetRangeUser(-0.1,pe*(15+3*i)/10);
+                    waveform->GetYaxis()->SetRangeUser(-0.1,pe+0.1);
                     waveform->GetYaxis()->SetTitle("Oscilloscope Signal [V]");
                     waveform->GetYaxis()->SetTitleOffset(1.3);
                     waveform->GetXaxis()->SetTitle("Time [s]");
@@ -405,24 +431,26 @@ int main(int argc, char* argv[]) {
                 clean = false;
             }
             
-            //  after pulse
+            //  Only after pulse
             if (after_pulse > 0 && xtalk_pulse == 0 && direct_xtalk_pulse == 0){
                 after_pulse_cnt++;
                 sprintf(Category,"AfterPulse");
                 c3[i]->cd();
                 
-                color3++;
-                if (color3==10 || color3==0) {
-                    color3++;
-                } else if (color3>49) color3=2;
+                color3=color3+2;
+                if (color3>kOrange+110) {
+                    color3=kOrange-8;
+                }else if (color3>kOrange+109){
+                    color3=kOrange-7;
+                }
                 waveform->SetLineColor(color3);
                 
-                if (color3>1) {
+                if (color3>kOrange-8) {
                     waveform->Draw("SAME");
                 }else{
-                    sprintf(graph_title,"After pulse %s",vol_folders.at(i).Data());
+                    sprintf(graph_title,"After pulse OV = %2.2f V",V_meas);
                     waveform->SetTitle(graph_title);
-                    waveform->GetYaxis()->SetRangeUser(-0.1,pe*(15+3*i)/10);
+                    waveform->GetYaxis()->SetRangeUser(-0.1,pe+0.1);
                     waveform->GetXaxis()->SetRangeUser(-10*ns,80*ns);
                     waveform->GetYaxis()->SetTitle("Oscilloscope Signal [V]");
                     waveform->GetYaxis()->SetTitleOffset(1.3);
@@ -433,28 +461,34 @@ int main(int argc, char* argv[]) {
                 
                 clean = false;
                 
-                
                 //Fill for the exponential fit
                 Expfit_AP[i]->SetPoint(after_pulse_cnt-1,time_of_max,sig_max);
             }
             
+            // Only clean graphs for the sample
             if (clean){
                 sprintf(Category,"Clean");
-                if (j<50) {
+                
+                if (color4 < 860 && j <100) {
+                    Cleanwaves[i]->Add(waveform);
                     c4[i]->cd();
                     
-                    color4++;
-                    if (color4==10 || color4==0) {
-                        color4++;
-                    } else if (color4>49) color4=2;
+                    color4=color4+2;
+                    if (color4>kOrange+110) {
+                        color4=kOrange-8;
+                    }else if (color4>kOrange+109){
+                        color4=kOrange-7;
+                    }
                     waveform->SetLineColor(color4);
                     
-                    if (color4>1) {
+                    
+                    
+                    if (color4>kOrange-8) {
                         waveform->Draw("SAME");
                     }else{
-                        sprintf(graph_title,"Clean pulse %s",vol_folders.at(i).Data());
+                        sprintf(graph_title,"Clean pulse OV = %2.2f V",V_meas);
                         waveform->SetTitle(graph_title);
-                        waveform->GetYaxis()->SetRangeUser(-0.1,pe*(15+3*i)/10);
+                        waveform->GetYaxis()->SetRangeUser(-0.1,pe+0.1);
                         waveform->GetYaxis()->SetTitle("Oscilloscope Signal [V]");
                         waveform->GetYaxis()->SetTitleOffset(1.3);
                         waveform->GetXaxis()->SetTitle("Time [s]");
@@ -478,17 +512,43 @@ int main(int argc, char* argv[]) {
             
         }
         
-        expfit[i]->cd();
+        cout<<"////////////"<< endl;
+        cout<<"****----->Long tau fit ***"<< endl;
+        expfit_longtau_c[i]->cd();
+        Cleanwaves[i]->Draw("AP*");
+        // Fit parameters and limits to calculate slow component of the pulse
+        exp_longtau->SetParameter(0,pe*0.2);
+        exp_longtau->SetParLimits(0,0.05*pe,0.5*pe);
+        exp_longtau->SetParameter(1,80*ns);
+        exp_longtau->SetParLimits(1,4*ns,200*ns);
+        Cleanwaves[i]->Fit("exptau","","",4*ns,60*ns); // Fit boundaries for the slow component of the pulse
+        Double_t amp0 = exp_longtau->GetParameter(0);
+        Double_t tau = exp_longtau->GetParameter(1);
+        if (globalArgs.save_all==1) expfit_longtau_c[i]->Write();
+        
+        c4[i]->cd();
+        TF1* exp_tau_plot =(TF1*) exp_longtau->Clone();
+        exp_tau_plot->Draw("SAME");//Draw fit-line over clean waveforms
+        
+        cout<<"////////////"<< endl;
+        cout<<"****----->After pulse fit ***"<< endl;
+        expfit_AP_c[i]->cd();
         Expfit_AP[i]->Draw("AP*");
+        // Fit parameters and limits to calculate AP recharge
         exp->SetParameter(0,pe);
         exp->SetParLimits(0,0.5*pe,1.5*pe);
         exp->SetParameter(1,30*ns);
         exp->SetParLimits(1,4*ns,500*ns);
+        exp->SetParameter(2,amp0);
+        exp->FixParameter(2,amp0);
+        exp->SetParameter(3,tau);
+        exp->FixParameter(3,tau);
         Expfit_AP[i]->Fit("exp");
+        if (globalArgs.save_all==1) expfit_AP_c[i]->Write();
         
         c3[i]->cd();
         TF1* exp_plot =(TF1*) exp->Clone();
-        exp_plot->Draw("SAME");
+        exp_plot->Draw("SAME"); //Draw fit-line over AP waveforms
         
         
         //Final result: Correlated noise
@@ -499,12 +559,16 @@ int main(int argc, char* argv[]) {
                                   Correl_noise[0]->GetY()[i]+Correl_noise[1]->GetY()[i]+Correl_noise[2]->GetY()[i]);
         
         
-        //Uncoment to save waveforms and check them
+        //Save/print reults:
+        if (globalArgs.save_all==1){
+            c1[i]->Write();
+            c2[i]->Write();
+            c3[i]->Write();
+            c4[i]->Write();
+        }
         
         sprintf(canvas_title,"Plots/Immcrosstalk_%s.pdf",vol_folders.at(i).Data());
         c1[i]->Print(canvas_title,"pdf");
-        sprintf(canvas_title,"Plots/Immcrosstalk_%s.root",vol_folders.at(i).Data());
-        c1[i]->SaveAs(canvas_title,"root");
         sprintf(canvas_title,"Plots/Delcrosstalk_%s.pdf",vol_folders.at(i).Data());
         c2[i]->Print(canvas_title,"pdf");
         sprintf(canvas_title,"Plots/Afterpulse_%s.pdf",vol_folders.at(i).Data());
@@ -514,16 +578,17 @@ int main(int argc, char* argv[]) {
         
         
     }
-    
+    //Save TTree with hist of noise
+    //Save each event with its OV and the noise classification
     tree->Write();
     
-    
+    //Create final plot of total correlated noise
     TCanvas* c5 = new TCanvas("Correlated Noise","Correlated Noise",100,100,900,700);
     
-    Correl_noise[3]->SetTitle("Total");
-    Correl_noise[3]->SetMarkerColor(2);
-    Correl_noise[3]->SetLineColor(2);
-    Correl_noise[3]->GetYaxis()->SetRangeUser(0,30);
+    Correl_noise[3]->SetTitle("Correlated Noise");
+    Correl_noise[3]->SetMarkerColor(kRed);
+    Correl_noise[3]->SetLineColor(kRed);
+    Correl_noise[3]->GetYaxis()->SetRangeUser(0,20);
     Correl_noise[3]->GetYaxis()->SetTitle("Noise [%]");
     Correl_noise[3]->GetXaxis()->SetTitle("OverVoltage [V]");
     Correl_noise[3]->Draw("ALP*");
@@ -531,19 +596,19 @@ int main(int argc, char* argv[]) {
     Correl_noise[0]->SetTitle("Direct Cross-Talk");
     Correl_noise[1]->SetTitle("After Pulse");
     Correl_noise[2]->SetTitle("Delayed Cross-Talk");
-    Correl_noise[0]->SetLineColor(3);
-    Correl_noise[1]->SetLineColor(4);
-    Correl_noise[2]->SetLineColor(5);
-    Correl_noise[0]->SetMarkerColor(3);
-    Correl_noise[1]->SetMarkerColor(4);
-    Correl_noise[2]->SetMarkerColor(5);
+    Correl_noise[0]->SetLineColor(kBlue);
+    Correl_noise[1]->SetLineColor(kOrange+7);
+    Correl_noise[2]->SetLineColor(kGreen+2);
+    Correl_noise[0]->SetMarkerColor(kBlue);
+    Correl_noise[1]->SetMarkerColor(kOrange+7);
+    Correl_noise[2]->SetMarkerColor(kGreen+2);
     Correl_noise[0]->Draw("LP*");
     Correl_noise[1]->Draw("LP*");
     Correl_noise[2]->Draw("LP*");
     
     
     
-    TLegend* leg = new TLegend(0.6,0.7,0.9,0.95);
+    TLegend* leg = new TLegend(0.15,0.65,0.47,0.87);
     leg->AddEntry(Correl_noise[3],"Total","lp");
     leg->AddEntry(Correl_noise[0],"Direct Cross-Talk","lp");
     leg->AddEntry(Correl_noise[1],"After Pulse","lp");
@@ -552,7 +617,7 @@ int main(int argc, char* argv[]) {
     
     
     c5->SetGrid();
-    c5->Print("Correlated Noise.pdf","pdf");
+    c5->Print("Plots/Correlated Noise.pdf","pdf");
     c5->Write();
     
     delete hfile;

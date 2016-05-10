@@ -7,4 +7,4 @@ V || 58V ||
 V || 58.5V ||
 V || 59V ||
 
-Files at each voltage || 2000 ||
+Files at each voltage || 200 ||
