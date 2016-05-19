@@ -11,8 +11,6 @@
 
 
 
-
-
 static const char *optString = "d:S:ah?";
 
 int main(int argc, char* argv[]) {
@@ -97,6 +95,7 @@ int main(int argc, char* argv[]) {
             vol_folders.push_back(volt);
         }
         
+        //Find data size
         if(sscanf(searchString, "Files at each voltage || %d ||", &numfiles)==1){
             data_size = numfiles;
         }
@@ -149,7 +148,6 @@ int main(int argc, char* argv[]) {
     const double xtalk_th = 0.85;
     
     
-    
     ////////////////
     ////////////////
     
@@ -171,7 +169,7 @@ int main(int argc, char* argv[]) {
     TTree *tree = new TTree("T","Noise Analysis");
     tree->Branch("Event",&Event,"Event/I");
     tree->Branch("Category",Category,"Category/C");
-    //Uncomment if every single waveform is desired to be safe by its own on the root file
+    //Uncomment if every single waveform is desired to be saved by its own on the root file
     //tree->Branch("waveform","TGraph",&waveform);
     tree->Branch("V_meas",&V_meas,"V_meas/D"); //OV of the measurement
     
@@ -184,6 +182,7 @@ int main(int argc, char* argv[]) {
     TGraph *Expfit_longtau[vol_size];
     TGraph *Expfit_AP[vol_size];
     
+    //Fiting functions of long tau and AP recharge
     TF1 *exp_longtau= new TF1("exptau","[0]*exp(-x/[1])",0,180 * ns);
     TF1 *exp= new TF1("exp","[0]*(1-exp(-x/[1]))+[2]*exp(-x/[3])",0,180 * ns);
     
@@ -213,7 +212,7 @@ int main(int argc, char* argv[]) {
         //pe_volt.push_back( 3.44156e-01);
         //Double_t VBD=55.9006;
     
-    //Calculate Voltage breakdown and size of pe
+    //Calculate Voltage breakdown and value of pe
     for (int i=0; i<vol_size; i++) {
         pe_volt.push_back(Amplitude_calc(vol_folders.at(i).Data(), data_size));
         V_meas = vol_folders.at(i).Atof();
@@ -256,7 +255,7 @@ int main(int argc, char* argv[]) {
         direct_xtalk_pulse_cnt = 0;
         xtalk_pulse_cnt = 0;
         after_pulse_cnt = 0;
-        event_cnt = 0;
+        event_cnt = 0; //Events on the Voltage measured
         
         cout<<"****----->Voltage analyzed: "<< vol_folders.at(i) << endl;
         
@@ -292,12 +291,15 @@ int main(int argc, char* argv[]) {
         //loop over every measurement on a folder
         for (int j=0; j<data_size; j++) {
             
-            Char_t datafilename[100];
+            Char_t datafilename[200];
+            Char_t datashortfilename[100];
             
             sprintf(datafilename,"%s/%s/C1H%05i.csv",globalArgs.data_folder,vol_folders.at(i).Data(),j);
+            sprintf(datashortfilename,"%s_C1H%05i",vol_folders.at(i).Data(),j);
             //Get the data of a single file:
             waveform = new TGraph(datafilename,"%lg %lg","/t;,");
-            waveform->SetName(datafilename);
+            waveform->SetName(datashortfilename);
+            waveform->SetTitle("");
             
             Int_t ROWS_DATA = waveform->GetN();
             Double_t *time = waveform->GetX();
@@ -378,6 +380,7 @@ int main(int argc, char* argv[]) {
                 sprintf(Category,"ImmCrosstalk");
                 c1[i]->cd();
                 
+                //Set graph color, and counting to draw axis and title
                 color1=color1+2;
                 if (color1>kOrange+110) {
                     color1=kOrange-8;
@@ -385,17 +388,15 @@ int main(int argc, char* argv[]) {
                     color1=kOrange-7;
                 }
                 waveform->SetLineColor(color1);
+                waveform->SetMarkerColor(color1);
+                
+                //Format the graph
+                sprintf(graph_title,"Direct CrossTalk OV = %2.2f V",V_meas);
+                waveform = format_graph(waveform,graph_title,pe);
                 
                 if (color1>kOrange-8) {
                     waveform->Draw("SAME");
                 }else{
-                    sprintf(graph_title,"Direct CrossTalk OV = %2.2f V",V_meas);
-                    waveform->SetTitle(graph_title);
-                    waveform->GetYaxis()->SetRangeUser(-0.1,pe*2.5);
-                    waveform->GetXaxis()->SetRangeUser(-10*ns,80*ns);
-                    waveform->GetYaxis()->SetTitle("Oscilloscope Signal [V]");
-                    waveform->GetYaxis()->SetTitleOffset(1.3);
-                    waveform->GetXaxis()->SetTitle("Time [s]");
                     waveform->Draw("AL");
                     c1[i]->SetGrid();
                 }
@@ -408,6 +409,7 @@ int main(int argc, char* argv[]) {
                 sprintf(Category,"DelCrosstalk");
                 c2[i]->cd();
                 
+                //Set graph color, and counting to draw axis and title
                 color2=color2+2;
                 if (color2>kOrange+110) {
                     color2=kOrange-8;
@@ -415,16 +417,15 @@ int main(int argc, char* argv[]) {
                     color2=kOrange-7;
                 }
                 waveform->SetLineColor(color2);
+                waveform->SetMarkerColor(color2);
                 
+                //Format the graph
+                sprintf(graph_title,"Delayed cross-talk OV = %2.2f V",V_meas);
+                waveform = format_graph(waveform,graph_title,pe);
+
                 if (color2>kOrange-8) {
                     waveform->Draw("SAME");
                 }else{
-                    sprintf(graph_title,"Delayed cross-talk OV = %2.2f V",V_meas);
-                    waveform->SetTitle(graph_title);
-                    waveform->GetYaxis()->SetRangeUser(-0.1,pe+0.1);
-                    waveform->GetYaxis()->SetTitle("Oscilloscope Signal [V]");
-                    waveform->GetYaxis()->SetTitleOffset(1.3);
-                    waveform->GetXaxis()->SetTitle("Time [s]");
                     waveform->Draw("AL");
                     c2[i]->SetGrid();
                 }
@@ -437,6 +438,7 @@ int main(int argc, char* argv[]) {
                 sprintf(Category,"AfterPulse");
                 c3[i]->cd();
                 
+                //Set graph color, and counting to draw axis and title
                 color3=color3+2;
                 if (color3>kOrange+110) {
                     color3=kOrange-8;
@@ -444,17 +446,15 @@ int main(int argc, char* argv[]) {
                     color3=kOrange-7;
                 }
                 waveform->SetLineColor(color3);
+                waveform->SetMarkerColor(color3);
+                
+                //Format the graph
+                sprintf(graph_title,"After pulse OV = %2.2f V",V_meas);
+                waveform = format_graph(waveform,graph_title,pe);
                 
                 if (color3>kOrange-8) {
                     waveform->Draw("SAME");
                 }else{
-                    sprintf(graph_title,"After pulse OV = %2.2f V",V_meas);
-                    waveform->SetTitle(graph_title);
-                    waveform->GetYaxis()->SetRangeUser(-0.1,pe+0.1);
-                    waveform->GetXaxis()->SetRangeUser(-10*ns,80*ns);
-                    waveform->GetYaxis()->SetTitle("Oscilloscope Signal [V]");
-                    waveform->GetYaxis()->SetTitleOffset(1.3);
-                    waveform->GetXaxis()->SetTitle("Time [s]");
                     waveform->Draw("AL");
                     c3[i]->SetGrid();
                 }
@@ -469,10 +469,11 @@ int main(int argc, char* argv[]) {
             if (clean){
                 sprintf(Category,"Clean");
                 
-                if (color4 < 860 && j <100) {
+                if (color4 < 860 && j <100) { //Max 100 clean graphs on the plot
                     Cleanwaves[i]->Add(waveform);
                     c4[i]->cd();
                     
+                    //Set graph color, and counting to draw axis and title
                     color4=color4+2;
                     if (color4>kOrange+110) {
                         color4=kOrange-8;
@@ -480,18 +481,15 @@ int main(int argc, char* argv[]) {
                         color4=kOrange-7;
                     }
                     waveform->SetLineColor(color4);
+                    waveform->SetMarkerColor(color4);
                     
-                    
+                    //Format the graph
+                    sprintf(graph_title,"Clean pulse OV = %2.2f V",V_meas);
+                    waveform = format_graph(waveform,graph_title,pe);
                     
                     if (color4>kOrange-8) {
                         waveform->Draw("SAME");
                     }else{
-                        sprintf(graph_title,"Clean pulse OV = %2.2f V",V_meas);
-                        waveform->SetTitle(graph_title);
-                        waveform->GetYaxis()->SetRangeUser(-0.1,pe+0.1);
-                        waveform->GetYaxis()->SetTitle("Oscilloscope Signal [V]");
-                        waveform->GetYaxis()->SetTitleOffset(1.3);
-                        waveform->GetXaxis()->SetTitle("Time [s]");
                         waveform->Draw("AL");
                         c4[i]->SetGrid();
                     }
@@ -502,7 +500,7 @@ int main(int argc, char* argv[]) {
             
             tree->Fill();
             
-            Event ++;
+            Event ++;//Total number of events analyzed on the run
             if (Event%500==0) {
                 cout<<"****----->Events analyzed:"<< Event << endl;
             }
@@ -605,8 +603,6 @@ int main(int argc, char* argv[]) {
     Correl_noise[0]->Draw("LP*");
     Correl_noise[1]->Draw("LP*");
     Correl_noise[2]->Draw("LP*");
-    
-    
     
     TLegend* leg = new TLegend(0.15,0.65,0.47,0.87);
     leg->AddEntry(Correl_noise[3],"Total","lp");

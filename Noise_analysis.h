@@ -14,7 +14,6 @@
 #include <fstream>
 #include <vector>
 
-
 #include <TFile.h>
 #include <TTree.h>
 #include <TCanvas.h>
@@ -42,12 +41,11 @@ struct globalArgs_t
     const char* data_folder;                /* -d option */
     const char* arg_pathToSetupFile;             /* -S option */
     int save_all;               /* -a  */
-    //int  arg_eventplot;                        /* -E option */
     
 } globalArgs;
 
 
-
+//Amplitude of pe calculation of raw data
 Double_t Amplitude_calc(const char* vol_folder, Int_t data_size){
     
     Double_t pe_volt;
@@ -67,8 +65,8 @@ Double_t Amplitude_calc(const char* vol_folder, Int_t data_size){
         
         Char_t datafilename[100];
         
+        //Get the waveform
         sprintf(datafilename,"%s/%s/C1H%05i.csv",globalArgs.data_folder,vol_folder,j);
-        
         TGraph* waveform = new TGraph(datafilename,"%lg %lg","/t;,");
         
         int ROWS_DATA = waveform->GetN();
@@ -90,7 +88,7 @@ Double_t Amplitude_calc(const char* vol_folder, Int_t data_size){
         
     }
     
-    
+    //Fit the first peak dsitribution to get pe
     TF1 *f1 = new TF1("f1","gaus",0,0.8); //Change range for fit of MPV
     volt_ampl->Fit("f1","R");
     pe_volt= f1->GetParameter(1);
@@ -104,9 +102,24 @@ Double_t Amplitude_calc(const char* vol_folder, Int_t data_size){
         c1->Write();*/
     }
 
-    
     return pe_volt;
 }
+
+
+//Format waveform graphs
+TGraph* format_graph(TGraph* waveform, char* graph_title,Double_t pe){
+    
+    waveform->SetTitle(graph_title);
+    waveform->GetYaxis()->SetRangeUser(-0.1,pe*2.5);
+    waveform->GetXaxis()->SetRangeUser(-10*ns,80*ns);
+    waveform->GetYaxis()->SetTitle("Oscilloscope Signal [V]");
+    waveform->GetYaxis()->SetTitleOffset(1.3);
+    waveform->GetXaxis()->SetTitle("Time [s]");
+    
+    return waveform;
+}
+
+
 
 
 
@@ -137,9 +150,6 @@ Double_t Amplitude_calc(const char* vol_folder, Int_t data_size){
 //
 //
 //}
-
-
-
 
 
 
