@@ -3,8 +3,8 @@
 
 
 The code reads out waveforms taken with an oscilloscope
-and characterizes it in order to characterize the noise
-of a SiPM.
+and characterizes them in order to characterize the noise
+on SiPM devices.
 
 
 To run here is an example:
