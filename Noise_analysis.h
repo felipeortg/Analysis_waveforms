@@ -20,6 +20,7 @@
 #include <TString.h>
 #include <TLegend.h>
 #include <TVirtualPad.h>
+#include <TPaveText.h>
 #include <TMath.h>
 #include <TH1D.h>
 #include <TGraph.h>
@@ -40,6 +41,7 @@ struct globalArgs_t
 {
     const char* data_folder;                /* -d option */
     const char* arg_pathToSetupFile;             /* -S option */
+    const char* results_folder;             /* -o option */
     int save_all;               /* -a  */
     
 } globalArgs;
@@ -53,7 +55,7 @@ Double_t Amplitude_calc(const char* vol_folder, Int_t data_size){
     Char_t canvas_title[200];
     sprintf(canvas_title,"Amplitude calculation %s",vol_folder);
     
-    TH1D* volt_ampl= new TH1D(canvas_title, canvas_title, 150, -0.05, 0.5);
+    TH1D* volt_ampl= new TH1D(canvas_title, canvas_title, 150, -0.05, 1.2);
     
     cout<<"****----->Amplitude calculation of pe: "<< vol_folder << endl;
     
@@ -66,8 +68,9 @@ Double_t Amplitude_calc(const char* vol_folder, Int_t data_size){
         Char_t datafilename[100];
         
         //Get the waveform
-        sprintf(datafilename,"%s/%s/C1H%05i.csv",globalArgs.data_folder,vol_folder,j);
+        sprintf(datafilename,"%s%s/C1H%05i.csv",globalArgs.data_folder,vol_folder,j);
         TGraph* waveform = new TGraph(datafilename,"%lg %lg","/t;,");
+        if (waveform->IsZombie()) continue;
         
         int ROWS_DATA = waveform->GetN();
         Double_t *time = waveform->GetX();
@@ -88,10 +91,15 @@ Double_t Amplitude_calc(const char* vol_folder, Int_t data_size){
         
     }
     
-    //Fit the first peak dsitribution to get pe
+    
+    //Fit the first peak distribution to get pe
     TF1 *f1 = new TF1("f1","gaus",0,0.8); //Change range for fit of MPV
+                                          //pe bigger than 0.8 wont be detected unless changed
     volt_ampl->Fit("f1","R");
     pe_volt= f1->GetParameter(1);
+    
+    sprintf(canvas_title,"Amplitude calculation %s, pe = %2.3f",vol_folder,pe_volt);
+    volt_ampl->SetTitle(canvas_title);
     
     if (globalArgs.save_all==1) {
         volt_ampl->Write();
@@ -102,15 +110,17 @@ Double_t Amplitude_calc(const char* vol_folder, Int_t data_size){
         c1->Write();*/
     }
 
+
+    
     return pe_volt;
 }
 
 
 //Format waveform graphs
-TGraph* format_graph(TGraph* waveform, char* graph_title,Double_t pe){
+TGraph* format_graph(TGraph* waveform, char* graph_title,Double_t ymax){
     
     waveform->SetTitle(graph_title);
-    waveform->GetYaxis()->SetRangeUser(-0.1,pe*2.5);
+    waveform->GetYaxis()->SetRangeUser(-0.1,ymax);
     waveform->GetXaxis()->SetRangeUser(-10*ns,80*ns);
     waveform->GetYaxis()->SetTitle("Oscilloscope Signal [V]");
     waveform->GetYaxis()->SetTitleOffset(1.3);
@@ -128,7 +138,7 @@ TGraph* format_graph(TGraph* waveform, char* graph_title,Double_t pe){
 //
 //    Char_t datafilename[100];
 //
-//    sprintf(datafilename,"%s/%s/C1H%05i.csv",data_folder.Data(),Voltage,event);
+//    sprintf(datafilename,"%s%s/C1H%05i.csv",data_folder.Data(),Voltage,event);
 //
 //    TGraph* waveform = new TGraph(datafilename,"%lg %lg","/t;,");
 //

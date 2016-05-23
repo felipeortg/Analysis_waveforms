@@ -11,7 +11,7 @@
 
 
 
-static const char *optString = "d:S:ah?";
+static const char *optString = "d:S:o:ah?";
 
 int main(int argc, char* argv[]) {
     
@@ -19,6 +19,7 @@ int main(int argc, char* argv[]) {
     // initialize globalArgs
     globalArgs.data_folder = " ";
     globalArgs.arg_pathToSetupFile = " ";
+    globalArgs.results_folder = " ";
     globalArgs.save_all = 0;
     
     // Get paremeter from the command
@@ -38,18 +39,21 @@ int main(int argc, char* argv[]) {
             case 'S':
                 globalArgs.arg_pathToSetupFile = optarg;
                 break;
+            case 'o':
+                globalArgs.results_folder = optarg;
+                break;
             case 'a':
                 globalArgs.save_all = 1;
                 break;
             case 'h':
             case '?':
-                std::cerr << "Usage: output -d pathToData -S pathToSetupFile [-a]" << std::endl;
+                std::cerr << "Usage: output -d pathToData -S pathToSetupFile -o pathToResultsFolder [-a]" << std::endl;
                 std::cerr << "----------------------------------------------------------------------------------------------------"<<std::endl;
-                std::cerr << " '-d'+'-S' options are necessary!"<<std::endl;
+                std::cerr << " '-d'+'-S'+'-o' options are necessary!"<<std::endl;
                 std::cerr << "-----------------------------------------------------------------------------------------------------"<<std::endl;
                 std::cerr << " use '-a' option afterwards to save all the plots of the analysis to further check."<<std::endl;
                 std::cerr << "-----------------------------------------------------------------------------------------------------"<<std::endl;
-                std::cerr << "Example: ./output -d /Users/Analysis_waveforms/ov_scan_pde_H2014 -S /Users/Analysis_waveforms/config_file.txt [-a]"<<std::endl;
+                std::cerr << "Example: ./output -d /Users/Analysis_waveforms/ov_scan_pde_H2014/ -S /Users/Analysis_waveforms/config_file.txt -o /Users/Analysis_waveforms/Plots/ [-a]"<<std::endl;
                 exit(EXIT_FAILURE);
                 break;
             default:
@@ -63,6 +67,11 @@ int main(int argc, char* argv[]) {
         std::cerr << "ERROR: -d or -S option is not set! Both of them has to be set correctly!"<<std::endl;
         exit(EXIT_FAILURE);
     }
+    
+    if(strncmp(globalArgs.results_folder," ",1) == 0){
+        std::cerr << "ERROR: -o option is not set! It has to be set up correctly!"<<std::endl;
+        exit(EXIT_FAILURE);
+    }
             
     ifstream setupFile(globalArgs.arg_pathToSetupFile);
     if(!setupFile){
@@ -71,13 +80,40 @@ int main(int argc, char* argv[]) {
         exit(EXIT_FAILURE);
     }
     
+    ////////////////
+    //Define thresholds
+    ////////////////
     
+    //in  nanoseconds
+    const double reject_time = 4;
+    vector <Double_t> reject_time_v;
+    //used for AP, delayed x-talk and long tau fit
+    
+    
+    //in percentage of pe
+    const double after_pulse_th = 0.38;
+    vector <Double_t> after_pulse_th_v;
+    const double direct_xtalk_th = 1.17;
+    vector <Double_t> direct_xtalk_th_v;
+    const double xtalk_th = 0.85;
+    vector <Double_t> xtalk_th_v;
+    const double time_dist_th = 0.4;
+    vector <Double_t> time_dist_th_v;
+    
+    ////////////////
+    ////////////////
     
     //Read setup file:
     string s;
     vector <TString> vol_folders;
     Int_t data_size;
+
     while (true) {
+        
+        Double_t rt;
+        Double_t ap;
+        Double_t delay;
+        Double_t imme;
         
         getline(setupFile, s);
         if (setupFile.eof()) break;
@@ -93,6 +129,23 @@ int main(int argc, char* argv[]) {
         //Find the voltages
         if(sscanf(searchString, "V || %s ||", volt)==1){
             vol_folders.push_back(volt);
+            reject_time_v.push_back(reject_time);
+            after_pulse_th_v.push_back(after_pulse_th);
+            direct_xtalk_th_v.push_back(direct_xtalk_th);
+            xtalk_th_v.push_back(xtalk_th);
+            time_dist_th_v.push_back(time_dist_th);
+        }
+        
+        if(sscanf(searchString, "V/th || %s ||", volt)==1){
+            vol_folders.push_back(volt);
+            getline(setupFile, s);
+            const char* thresholds_string = s.c_str();
+            sscanf(thresholds_string, "Rej_t: %lf, AP_th: %lf, Delay_th: %lf, Imm_th: %lf", &rt,&ap,&delay,&imme);
+            reject_time_v.push_back(rt);
+            after_pulse_th_v.push_back(ap);
+            direct_xtalk_th_v.push_back(imme);
+            xtalk_th_v.push_back(delay);
+            time_dist_th_v.push_back(time_dist_th);
         }
         
         //Find data size
@@ -100,6 +153,8 @@ int main(int argc, char* argv[]) {
             data_size = numfiles;
         }
     }
+    
+    
     
     //Initialize variables
     const Int_t vol_size = vol_folders.size();
@@ -134,22 +189,7 @@ int main(int argc, char* argv[]) {
     int max_noise_cnt = 0;
     int max_found = 0;
     
-    ////////////////
-    //Define thresholds
-    ////////////////
     
-    //in  nanoseconds
-    const double reject_time = 4;
-    const double time_dist_th = 0.4;
-    
-    //in percentage of pe
-    const double after_pulse_th = 0.38;
-    const double direct_xtalk_th = 1.17;
-    const double xtalk_th = 0.85;
-    
-    
-    ////////////////
-    ////////////////
     
     /*const char * Voltage="56.5V";
     int event=0;
@@ -160,7 +200,8 @@ int main(int argc, char* argv[]) {
     
     //Create a root tree with the graph of the waveform of each event and
     //classify them
-    TString filename = "noiseanalysis.root";
+    TString filename = globalArgs.results_folder;
+    filename.Append("noiseanalysis.root");
     
     TFile *hfile = 0;
     hfile = TFile::Open(filename,"RECREATE");
@@ -227,14 +268,20 @@ int main(int argc, char* argv[]) {
     Vbias_ver->Draw("AP*");
     ca->SetGrid();
     
+    TPaveText * pv = new TPaveText(0.2,0.65,0.35,0.74,"brNDC");
+    
     cout<<"////////////"<< endl;
     cout<<"****----->Voltage Breakdown fit ***"<< endl;
     
     TFitResultPtr fit = Vbias_ver->Fit("pol1","S");
     Double_t VBD= fit->Value(0);
     
-    if (globalArgs.save_all==1) ca->Write();
+    Char_t VBD_text[20];
+    sprintf(VBD_text,"V_{BD} = %2.2f",VBD);
+    pv->AddText(VBD_text);
+    pv->Draw();
     
+    if (globalArgs.save_all==1) ca->Write();
     
     cout<<"////////////"<< endl;
     cout<<"****----->Noise analysis ***"<< endl;
@@ -294,10 +341,12 @@ int main(int argc, char* argv[]) {
             Char_t datafilename[200];
             Char_t datashortfilename[100];
             
-            sprintf(datafilename,"%s/%s/C1H%05i.csv",globalArgs.data_folder,vol_folders.at(i).Data(),j);
+            sprintf(datafilename,"%s%s/C1H%05i.csv",globalArgs.data_folder,vol_folders.at(i).Data(),j);
             sprintf(datashortfilename,"%s_C1H%05i",vol_folders.at(i).Data(),j);
             //Get the data of a single file:
             waveform = new TGraph(datafilename,"%lg %lg","/t;,");
+            if (waveform->IsZombie()) continue;
+            
             waveform->SetName(datashortfilename);
             waveform->SetTitle("");
             
@@ -322,7 +371,7 @@ int main(int argc, char* argv[]) {
             /////////////////////////////////////////////////////
             // direct x-talk
             for (row = 0; row < ROWS_DATA; row++) {
-                if ((time[row]>0 * ns)&(volts[row] > direct_xtalk_th * pe)) {// time larger 0ns
+                if ((time[row]>0 * ns)&(volts[row] > direct_xtalk_th_v.at(i) * pe)) {// time larger 0ns
                     direct_xtalk_pulse++;
                 }
             }
@@ -330,7 +379,7 @@ int main(int argc, char* argv[]) {
             /////////////////////////////////////////////////////
             // after-pulse threshold
             for (row = 0; row < ROWS_DATA; row++) {
-                if ((time[row]>reject_time*ns)&(volts[row] > after_pulse_th * pe)) {// time larger 4ns and ap_th
+                if ((time[row]>reject_time_v.at(i)*ns)&(volts[row] > after_pulse_th_v.at(i) * pe)) {// time larger 4ns and ap_th
                     after_pulse++;
                 }
             }
@@ -338,7 +387,7 @@ int main(int argc, char* argv[]) {
             /////////////////////////////////////////////////////
             // delayed x-talk
             for (row = 0; row < ROWS_DATA; row++) {
-                if ((time[row]>reject_time*ns)&(volts[row] > xtalk_th * pe)) {// time larger 4ns and larger xtalk_th
+                if ((time[row]>reject_time_v.at(i)*ns)&(volts[row] > xtalk_th_v.at(i) * pe)) {// time larger 4ns and larger xtalk_th
                     xtalk_pulse++;
                 }
             }
@@ -350,14 +399,14 @@ int main(int argc, char* argv[]) {
             /////////////////////////////////////////////////////////////////////
             max_noise_cnt = 0;
             for (row = 0; row < ROWS_DATA; row++) {
-                if (time[row] > reject_time*ns) {// time larger 4ns
+                if (time[row] > reject_time_v.at(i)*ns) {// time larger 4ns
                     if (volts[row] > sig_max) {
                         sig_max = volts[row];        // set the max
                         time_of_max = time[row];    // time max
                         max_noise_cnt++;                   // set the histeresis cnt
                     }else if (max_noise_cnt > 0) max_noise_cnt--;  //  count down if no new max is reached
                     // decide if real max or only noise, threshold has to be reached in case of a real max
-                    if (max_noise_cnt>2 && sig_max > time_dist_th * pe) {
+                    if (max_noise_cnt>2 && sig_max > time_dist_th_v.at(i) * pe) {
                         max_cnt++;
                         if (max_cnt == 1) {
                             sig_max_first = sig_max;  // sig max
@@ -392,7 +441,7 @@ int main(int argc, char* argv[]) {
                 
                 //Format the graph
                 sprintf(graph_title,"Direct CrossTalk OV = %2.2f V",V_meas);
-                waveform = format_graph(waveform,graph_title,pe);
+                waveform = format_graph(waveform,graph_title,2.5*pe);
                 
                 if (color1>kOrange-8) {
                     waveform->Draw("SAME");
@@ -421,7 +470,7 @@ int main(int argc, char* argv[]) {
                 
                 //Format the graph
                 sprintf(graph_title,"Delayed cross-talk OV = %2.2f V",V_meas);
-                waveform = format_graph(waveform,graph_title,pe);
+                waveform = format_graph(waveform,graph_title,1.2*pe);
 
                 if (color2>kOrange-8) {
                     waveform->Draw("SAME");
@@ -450,7 +499,7 @@ int main(int argc, char* argv[]) {
                 
                 //Format the graph
                 sprintf(graph_title,"After pulse OV = %2.2f V",V_meas);
-                waveform = format_graph(waveform,graph_title,pe);
+                waveform = format_graph(waveform,graph_title,1.2*pe);
                 
                 if (color3>kOrange-8) {
                     waveform->Draw("SAME");
@@ -485,7 +534,7 @@ int main(int argc, char* argv[]) {
                     
                     //Format the graph
                     sprintf(graph_title,"Clean pulse OV = %2.2f V",V_meas);
-                    waveform = format_graph(waveform,graph_title,pe);
+                    waveform = format_graph(waveform,graph_title,1.2*pe);
                     
                     if (color4>kOrange-8) {
                         waveform->Draw("SAME");
@@ -519,7 +568,7 @@ int main(int argc, char* argv[]) {
         exp_longtau->SetParLimits(0,0.05*pe,0.5*pe);
         exp_longtau->SetParameter(1,80*ns);
         exp_longtau->SetParLimits(1,4*ns,200*ns);
-        Cleanwaves[i]->Fit("exptau","","",4*ns,60*ns); // Fit boundaries for the slow component of the pulse
+        Cleanwaves[i]->Fit("exptau","","",reject_time_v.at(i)*ns,60*ns); // Fit boundaries for the slow component of the pulse
         Double_t amp0 = exp_longtau->GetParameter(0);
         Double_t tau = exp_longtau->GetParameter(1);
         if (globalArgs.save_all==1) expfit_longtau_c[i]->Write();
@@ -565,13 +614,13 @@ int main(int argc, char* argv[]) {
             c4[i]->Write();
         }
         
-        sprintf(canvas_title,"Plots/Immcrosstalk_%s.pdf",vol_folders.at(i).Data());
+        sprintf(canvas_title,"%sImmcrosstalk_%s.pdf",globalArgs.results_folder,vol_folders.at(i).Data());
         c1[i]->Print(canvas_title,"pdf");
-        sprintf(canvas_title,"Plots/Delcrosstalk_%s.pdf",vol_folders.at(i).Data());
+        sprintf(canvas_title,"%sDelcrosstalk_%s.pdf",globalArgs.results_folder,vol_folders.at(i).Data());
         c2[i]->Print(canvas_title,"pdf");
-        sprintf(canvas_title,"Plots/Afterpulse_%s.pdf",vol_folders.at(i).Data());
+        sprintf(canvas_title,"%sAfterpulse_%s.pdf",globalArgs.results_folder,vol_folders.at(i).Data());
         c3[i]->Print(canvas_title,"pdf");
-        sprintf(canvas_title,"Plots/Clean_%s.pdf",vol_folders.at(i).Data());
+        sprintf(canvas_title,"%sClean_%s.pdf",globalArgs.results_folder,vol_folders.at(i).Data());
         c4[i]->Print(canvas_title,"pdf");
         
         
@@ -583,10 +632,12 @@ int main(int argc, char* argv[]) {
     //Create final plot of total correlated noise
     TCanvas* c5 = new TCanvas("Correlated Noise","Correlated Noise",100,100,900,700);
     
+    Double_t tot_max_noise = TMath::MaxElement(Correl_noise[3]->GetN(),Correl_noise[3]->GetY());
+    
     Correl_noise[3]->SetTitle("Correlated Noise");
     Correl_noise[3]->SetMarkerColor(kRed);
     Correl_noise[3]->SetLineColor(kRed);
-    Correl_noise[3]->GetYaxis()->SetRangeUser(0,20);
+    Correl_noise[3]->GetYaxis()->SetRangeUser(0,tot_max_noise+2);
     Correl_noise[3]->GetYaxis()->SetTitle("Noise [%]");
     Correl_noise[3]->GetXaxis()->SetTitle("OverVoltage [V]");
     Correl_noise[3]->Draw("ALP*");
@@ -613,7 +664,9 @@ int main(int argc, char* argv[]) {
     
     
     c5->SetGrid();
-    c5->Print("Plots/Correlated Noise.pdf","pdf");
+    TString final_plot_name = globalArgs.results_folder;
+    final_plot_name.Append("Correlated Noise.pdf");
+    c5->Print(final_plot_name,"pdf");
     c5->Write();
     
     delete hfile;
